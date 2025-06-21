@@ -1,0 +1,180 @@
+(async () => {
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+    const blooks = {};
+    const unlocks = { "Uncommon": {}, "Rare": {}, "Epic": {}, "Legendary": {}, "Chroma": {}, "Mystical": {} };
+    let opened = 0;
+    let stop = false;
+    let unique = 'NONE';
+
+    // Inject basic styles for modal + stat box
+    const style = document.createElement('style');
+    style.textContent = `
+        .triangulet-box {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            width: 280px;
+            background: #f0f0f0;
+            border-radius: 10px;
+            padding: 15px;
+            box-shadow: 0 0 10px #000;
+            z-index: 9999;
+            font-family: Nunito, sans-serif;
+            overflow-y: auto;
+            max-height: 90vh;
+        }
+        .triangulet-modal {
+            position: fixed;
+            top: 20%;
+            left: 50%;
+            transform: translateX(-50%);
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 0 12px #000;
+            z-index: 10000;
+        }
+        .triangulet-modal select,
+        .triangulet-modal input {
+            width: 100%;
+            padding: 6px;
+            margin-top: 6px;
+            margin-bottom: 14px;
+            font-size: 14px;
+        }
+        .triangulet-modal button {
+            width: 100%;
+            background: #039162;
+            color: white;
+            border: none;
+            padding: 10px;
+            border-radius: 6px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+    `;
+    document.head.appendChild(style);
+
+    // Load available capsules
+    const packsRes = await fetch('/data/trians', {
+        headers: {
+            'Accept': 'application/json',
+            'authorization': triangulet.tokenraw,
+            'Content-Type': 'application/json'
+        }
+    }).then(res => res.json());
+    const packOptions = packsRes.ValuesnCapsules.map(x => x.name);
+
+    // Create modal
+    const modal = document.createElement('div');
+    modal.className = 'triangulet-modal';
+    modal.innerHTML = `
+        <h3>Select Capsule</h3>
+        <select id="triPack">${packOptions.map(p => `<option value="${p}">${p}</option>`)}</select>
+        <input id="triQty" type="number" placeholder="Quantity (leave blank to use tokens)">
+        <input id="triTokens" type="number" placeholder="Token budget">
+        <label><input type="checkbox" id="triAllTokens"> Use All Tokens</label>
+        <button id="triStart">Start Auto-Opening</button>
+    `;
+    document.body.appendChild(modal);
+
+    // Attach click
+    document.getElementById('triStart').onclick = async () => {
+        const pack = document.getElementById('triPack').value;
+        const qty = parseInt(document.getElementById('triQty').value);
+        const tokenLimit = parseInt(document.getElementById('triTokens').value);
+        const useAllTokens = document.getElementById('triAllTokens').checked;
+
+        modal.remove();
+        document.body.style.overflow = 'auto';
+
+        const price = 25; // static value or dynamic via config
+        let total = qty || (useAllTokens ? Math.floor(blacket.user.tokens / price) : Math.floor(tokenLimit / price));
+
+        const box = document.createElement('div');
+        box.className = 'triangulet-box';
+        box.innerHTML = `<h3>Auto Opener Active</h3><button id="triToggle">Stop</button><div id="triLog"></div>`;
+        document.body.appendChild(box);
+        dragElement(box);
+
+        document.getElementById('triToggle').onclick = () => {
+            stop = !stop;
+            document.getElementById('triToggle').textContent = stop ? 'Resume' : 'Stop';
+        };
+
+        for (let i = 0; i < total && !stop; i++) {
+            if (blacket.user.tokens < price) break;
+
+            const res = await fetch('/api/open', {
+                method: 'POST',
+                headers: {
+                    'Accept': 'application/json',
+                    'authorization': triangulet.tokenraw,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ capsule: pack })
+            }).then(r => r.json());
+
+            if (res.new) unique = res.trian;
+            unlocks[res.rarity][res.trian] = (unlocks[res.rarity][res.trian] || 0) + 1;
+            blooks[res.trian] = (blooks[res.trian] || 0) + 1;
+            opened++;
+
+            const log = document.getElementById('triLog');
+            log.innerHTML = `
+                <p><strong>${res.rarity} ${res.trian}</strong></p>
+                <p>Obtained: ${blooks[res.trian]}x</p>
+                <p>Total Opened: ${opened}</p>
+                <hr/>
+            ` + log.innerHTML;
+
+            await sleep(1150);
+        }
+
+        const done = document.createElement('div');
+        done.innerHTML = `<p><strong>Opening finished.</strong><br/>Opened: ${opened}</p>`;
+        box.appendChild(done);
+    };
+
+    // Ctrl + Alt + D to cancel
+    document.addEventListener('keydown', e => {
+        if (e.ctrlKey && e.altKey && e.key.toLowerCase() === 'd') {
+            stop = true;
+            alert('Opening manually cancelled.');
+        }
+    });
+
+        function dragElement(elmnt) {
+        let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
+
+        elmnt.onmousedown = dragMouseDown;
+
+        function dragMouseDown(e) {
+            e = e || window.event;
+            e.preventDefault();
+            // Get initial mouse positions
+            pos3 = e.clientX;
+            pos4 = e.clientY;
+            document.onmouseup = closeDragElement;
+            document.onmousemove = elementDrag;
+        }
+
+        function elementDrag(e) {
+            e = e || window.event;
+            e.preventDefault();
+            // Calculate the new cursor position
+            pos1 = pos3 - e.clientX;
+            pos2 = pos4 - e.clientY;
+            pos3 = e.clientX;
+            pos4 = e.clientY;
+            // Set the element's new position
+            elmnt.style.top = (elmnt.offsetTop - pos2) + "px";
+            elmnt.style.left = (elmnt.offsetLeft - pos1) + "px";
+        }
+
+        function closeDragElement() {
+            document.onmouseup = null;
+            document.onmousemove = null;
+        }
+    }
+})();
